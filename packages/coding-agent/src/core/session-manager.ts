@@ -593,11 +593,16 @@ function getDefaultSessionDirPath(cwd: string, agentDir: string = getDefaultAgen
 	return join(resolvedAgentDir, "sessions", safePath);
 }
 
+/** Create a session directory if missing. New directories are owner-only because sessions hold full transcripts. */
+export function ensureSessionDir(dir: string): void {
+	if (!existsSync(dir)) {
+		mkdirSync(dir, { recursive: true, mode: 0o700 });
+	}
+}
+
 export function getDefaultSessionDir(cwd: string, agentDir: string = getDefaultAgentDir()): string {
 	const sessionDir = getDefaultSessionDirPath(cwd, agentDir);
-	if (!existsSync(sessionDir)) {
-		mkdirSync(sessionDir, { recursive: true });
-	}
+	ensureSessionDir(sessionDir);
 	return sessionDir;
 }
 
@@ -1008,8 +1013,8 @@ export class SessionManager {
 		this.cwd = resolvePath(cwd);
 		this.sessionDir = normalizePath(sessionDir);
 		this.persist = persist;
-		if (persist && this.sessionDir && !existsSync(this.sessionDir)) {
-			mkdirSync(this.sessionDir, { recursive: true });
+		if (persist && this.sessionDir) {
+			ensureSessionDir(this.sessionDir);
 		}
 
 		if (sessionFile) {
@@ -1831,9 +1836,7 @@ export class SessionManager {
 		}
 
 		const dir = sessionDir ? normalizePath(sessionDir) : getDefaultSessionDir(resolvedTargetCwd);
-		if (!existsSync(dir)) {
-			mkdirSync(dir, { recursive: true });
-		}
+		ensureSessionDir(dir);
 
 		// Create new session file with new ID but forked content
 		if (options?.id !== undefined) {

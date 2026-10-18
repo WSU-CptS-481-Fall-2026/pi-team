@@ -1,6 +1,7 @@
 import { constants as bufferConstants } from "buffer";
 import {
 	appendFileSync,
+	chmodSync,
 	closeSync,
 	existsSync,
 	mkdirSync,
@@ -8,13 +9,19 @@ import {
 	openSync,
 	readFileSync,
 	rmSync,
+	statSync,
 	writeFileSync,
 	writeSync,
 } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findMostRecentSession, loadEntriesFromFile, SessionManager } from "../../src/core/session-manager.ts";
+import {
+	findMostRecentSession,
+	getDefaultSessionDir,
+	loadEntriesFromFile,
+	SessionManager,
+} from "../../src/core/session-manager.ts";
 import { assistantMsg, readSessionFileRoles, userMsg } from "../utilities.ts";
 
 const HEADER_SCAN_LIMIT_BYTES = 1024 * 1024;
@@ -470,5 +477,53 @@ describe("SessionManager session file creation", () => {
 		session.appendMessage(assistantMsg("first answer"));
 
 		expect(readSessionFileRoles(session.getSessionFile()!)).toEqual(["session", "user", "custom", "assistant"]);
+	});
+});
+
+// #10770: session directories hold full transcripts, so new ones must be private to the owner
+describe.skipIf(process.platform === "win32")("SessionManager session directory permissions", () => {
+	let tempDir: string;
+	const modeOf = (path: string) => statSync(path).mode & 0o777;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), "pi-session-mode-"));
+	});
+
+	afterEach(() => {
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	it("creates the default session directory and its missing parents with mode 0700", () => {
+		const agentDir = join(tempDir, "agent");
+		const sessionDir = getDefaultSessionDir(join(tempDir, "project"), agentDir);
+
+		expect(modeOf(agentDir)).toBe(0o700);
+		expect(modeOf(join(agentDir, "sessions"))).toBe(0o700);
+		expect(modeOf(sessionDir)).toBe(0o700);
+	});
+
+	it("creates a custom session directory with mode 0700", () => {
+		const sessionDir = join(tempDir, "custom", "sessions");
+		SessionManager.create(tempDir, sessionDir);
+
+		expect(modeOf(sessionDir)).toBe(0o700);
+	});
+
+	it("creates a fork target directory with mode 0700", () => {
+		const source = SessionManager.create(tempDir, join(tempDir, "source"));
+		source.appendMessage(userMsg("hello"));
+		const targetDir = join(tempDir, "fork-target");
+		SessionManager.forkFrom(source.getSessionFile()!, tempDir, targetDir);
+
+		expect(modeOf(targetDir)).toBe(0o700);
+	});
+
+	it("keeps the mode of an existing session directory", () => {
+		const sessionDir = join(tempDir, "existing");
+		mkdirSync(sessionDir);
+		chmodSync(sessionDir, 0o750);
+		SessionManager.create(tempDir, sessionDir);
+
+		expect(modeOf(sessionDir)).toBe(0o750);
 	});
 });

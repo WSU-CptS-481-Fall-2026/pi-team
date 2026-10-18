@@ -49,6 +49,8 @@ See [Compaction Reference](compaction.md) for thresholds, retained boundaries, b
 
 By default, Pi stores sessions under `~/.pi/agent/sessions/`, grouped by working directory. Use `--session-dir`, `PI_CODING_AGENT_SESSION_DIR`, or the `sessionDir` setting to choose another location. The CLI option has highest precedence.
 
+Sessions can contain prompts, command output, file contents, and credentials, so on macOS and Linux Pi creates new session directories, including missing parent directories, with owner-only permissions (`0700`). Directories that already exist keep their permissions. To restrict a directory created by an older version, run `chmod 700 ~/.pi/agent/sessions`.
+
 Use `--no-session` for an ephemeral run. An ephemeral session cannot be resumed after Pi exits.
 
 Use `--session` when you already know the session path or ID. Use `--fork` to create a new session from an existing session before interactive mode starts.

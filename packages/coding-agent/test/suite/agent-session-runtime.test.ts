@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, parse } from "node:path";
 import { fauxAssistantMessage, fauxToolCall, registerFauxProvider } from "@earendil-works/pi-ai/compat";
@@ -245,6 +245,26 @@ describe("AgentSessionRuntime characterization", () => {
 		expect(runtime.session.sessionFile).not.toBe(storedPath);
 		expect(readFileSync(runtime.session.sessionFile!, "utf8")).toContain('"id":"imported"');
 	});
+
+	// #10770: importing recreates a missing session directory, which must stay private to the owner
+	it.skipIf(process.platform === "win32")(
+		"recreates a missing session directory with mode 0700 on import",
+		async () => {
+			const { runtime, tempDir } = await createRuntimeForTest(() => {});
+			const sessionDir = runtime.session.sessionManager.getSessionDir();
+			const importPath = join(tempDir, "import", "imported.jsonl");
+			mkdirSync(join(tempDir, "import"), { recursive: true });
+			writeFileSync(
+				importPath,
+				`${JSON.stringify({ type: "session", version: 3, id: "imported", timestamp: new Date().toISOString(), cwd: tempDir })}\n`,
+			);
+			rmSync(sessionDir, { recursive: true, force: true });
+
+			await runtime.importFromJsonl(importPath);
+
+			expect(statSync(sessionDir).mode & 0o777).toBe(0o700);
+		},
+	);
 
 	it("emits session_before_switch and session_start for new and resume flows", async () => {
 		const events: RecordedSessionEvent[] = [];

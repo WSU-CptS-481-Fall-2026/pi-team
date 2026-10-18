@@ -91,6 +91,7 @@ These practices do not replace isolation, but they reduce exposure or make recov
 - Prefer narrowly scoped, short-lived credentials.
 - Review diffs and generated output before applying results to another system.
 - Review sessions before exporting or sharing them. They can contain prompts, tool arguments, command output, file contents, and credentials exposed during the conversation.
+- Keep session directories private. Pi creates new session directories as owner-only (`0700`), but directories created by older versions keep their permissions. See [Control session storage](sessions.md#control-session-storage).
 
 ## Report a security issue
 
