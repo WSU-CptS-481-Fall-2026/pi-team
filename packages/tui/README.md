@@ -329,6 +329,8 @@ When a `Focusable` component has focus, TUI:
 3. Positions the hardware terminal cursor at that location
 4. Shows the hardware cursor only when `showHardwareCursor` is enabled
 
+Emit a single `CURSOR_MARKER` from the focused component. Text slicing keeps position markers only in their original column range, while preserving inherited colors and hyperlinks. Before terminal output, both renderers remove all cursor markers, including duplicates, so selection highlighting cannot leak internal `pi:c` text or corrupt the display.
+
 `renderFakeCursor()` wraps the cursor cell in zero-width markers. TUI renders them as reverse video. When `showHardwareCursor` is enabled, TUI removes the fake cursor that directly follows `CURSOR_MARKER`, so the focused component shows only the terminal cursor. Fake cursors without a preceding `CURSOR_MARKER` stay visible.
 
 The hardware cursor remains hidden by default. This keeps the fake cursor rendering, while still positioning the hardware cursor for terminals that track IME candidate windows with hidden cursors. Some terminals require a visible hardware cursor for IME positioning; enable it with the renderer constructor's `showHardwareCursor` argument or `setShowHardwareCursor(true)`. The `Editor` and `Input` built-in components already implement this interface.

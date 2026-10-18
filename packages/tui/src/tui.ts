@@ -189,7 +189,7 @@ export function isFocusable(component: Component | null): component is Component
 
 /**
  * Cursor position marker - APC (Application Program Command) sequence.
- * This is a zero-width escape sequence that terminals ignore.
+ * This internal zero-width escape sequence must be stripped before terminal output.
  * Components emit this at the cursor position when focused.
  * TUI finds and strips this marker, then positions the hardware cursor there.
  */
@@ -1444,30 +1444,26 @@ export abstract class TuiBase extends Container implements TUI {
 
 	/**
 	 * Find and extract cursor position from rendered lines.
-	 * Searches for CURSOR_MARKER, calculates its position, and strips it from the output.
-	 * Only scans the bottom terminal height lines (visible viewport).
+	 * Uses the first marker on the bottommost visible row for cursor placement.
+	 * Strips all markers from the output, including duplicates and offscreen markers.
 	 * @param lines - Rendered lines to search
 	 * @param height - Terminal height (visible viewport size)
 	 * @returns Cursor position { row, col } or null if no marker found
 	 */
 	protected extractCursorPosition(lines: string[], height: number): { row: number; col: number } | null {
-		// Only scan the bottom `height` lines (visible viewport)
 		const viewportTop = Math.max(0, lines.length - height);
-		for (let row = lines.length - 1; row >= viewportTop; row--) {
+		let cursorPosition: { row: number; col: number } | null = null;
+		for (let row = lines.length - 1; row >= 0; row--) {
 			const line = lines[row];
 			const markerIndex = line.indexOf(CURSOR_MARKER);
 			if (markerIndex !== -1) {
-				// Calculate visual column (width of text before marker)
-				const beforeMarker = line.slice(0, markerIndex);
-				const col = visibleWidth(beforeMarker);
-
-				// Strip marker from the line
-				lines[row] = line.slice(0, markerIndex) + line.slice(markerIndex + CURSOR_MARKER.length);
-
-				return { row, col };
+				if (cursorPosition === null && row >= viewportTop) {
+					cursorPosition = { row, col: visibleWidth(line.slice(0, markerIndex)) };
+				}
+				lines[row] = line.replaceAll(CURSOR_MARKER, "");
 			}
 		}
-		return null;
+		return cursorPosition;
 	}
 
 	/**
