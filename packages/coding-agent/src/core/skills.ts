@@ -93,22 +93,59 @@ function validateName(name: string): string[] {
 	const errors: string[] = [];
 
 	if (name.length > MAX_NAME_LENGTH) {
-		errors.push(`name exceeds ${MAX_NAME_LENGTH} characters (${name.length})`);
+		errors.push(`exceeds ${MAX_NAME_LENGTH} characters (${name.length})`);
 	}
 
 	if (!/^[a-z0-9-]+$/.test(name)) {
-		errors.push(`name contains invalid characters (must be lowercase a-z, 0-9, hyphens only)`);
+		errors.push(`contains invalid characters (must be lowercase a-z, 0-9, hyphens only)`);
 	}
 
 	if (name.startsWith("-") || name.endsWith("-")) {
-		errors.push(`name must not start or end with a hyphen`);
+		errors.push(`must not start or end with a hyphen`);
 	}
 
 	if (name.includes("--")) {
-		errors.push(`name must not contain consecutive hyphens`);
+		errors.push(`must not contain consecutive hyphens`);
 	}
 
 	return errors;
+}
+
+/** Suggest the directory name when valid (the portable choice), otherwise a slug of the name. */
+function suggestName(name: string, dirName: string | undefined): string | undefined {
+	if (dirName && validateName(dirName).length === 0) {
+		return dirName;
+	}
+	const slug = name
+		.normalize("NFKD")
+		.replace(/\p{M}/gu, "")
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, "-")
+		.slice(0, MAX_NAME_LENGTH)
+		.replace(/^-+|-+$/g, "");
+	return slug || undefined;
+}
+
+function formatNameWarning(
+	name: string,
+	errors: string[],
+	fromFrontmatter: boolean,
+	suggestion: string | undefined,
+	loaded: boolean,
+): string {
+	const subject = fromFrontmatter
+		? `frontmatter name "${name}"`
+		: `no frontmatter name is set, and the directory name "${name}"`;
+	let message = `${subject} is invalid: ${errors.join("; ")}.`;
+	if (suggestion) {
+		message += fromFrontmatter
+			? ` Use a name such as "${suggestion}".`
+			: ` Add a frontmatter name such as "${suggestion}".`;
+	}
+	if (loaded) {
+		message += " The skill is still loaded with this name.";
+	}
+	return message;
 }
 
 /**
@@ -118,7 +155,7 @@ function validateDescription(description: unknown): string[] {
 	const errors: string[] = [];
 
 	if (typeof description !== "string" || description.trim() === "") {
-		errors.push("description is required");
+		errors.push("description is required. The skill is not loaded.");
 	} else if (description.length > MAX_DESCRIPTION_LENGTH) {
 		errors.push(`description exceeds ${MAX_DESCRIPTION_LENGTH} characters (${description.length})`);
 	}
@@ -320,10 +357,12 @@ function loadSkillFromFile(
 	const frontmatterName = typeof frontmatter.name === "string" ? frontmatter.name : undefined;
 	const name = frontmatterName || parentDirName;
 
-	// Validate name
+	// Validate name (a root-level .md file's directory is the skills root, not a name candidate)
 	const nameErrors = validateName(name);
-	for (const error of nameErrors) {
-		diagnostics.push({ type: "warning", message: error, path: filePath });
+	if (nameErrors.length > 0) {
+		const suggestion = suggestName(name, isDeclaredSkill ? parentDirName : undefined);
+		const message = formatNameWarning(name, nameErrors, Boolean(frontmatterName), suggestion, hasDescription);
+		diagnostics.push({ type: "warning", message, path: filePath });
 	}
 
 	// Still load the skill even with warnings, unless description is missing or empty.

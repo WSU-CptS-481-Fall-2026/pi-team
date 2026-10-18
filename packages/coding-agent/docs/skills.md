@@ -78,7 +78,13 @@ The Agent Skills specification defines these fields:
 | `allowed-tools` | Experimental pre-approved tool list |
 | `disable-model-invocation` | Hide the skill from automatic model selection |
 
-Names use lowercase letters, numbers, and hyphens, with no leading, trailing, or consecutive hyphens. They can contain at most 64 characters; descriptions can contain at most 1024.
+Names use lowercase letters, numbers, and hyphens, with no leading, trailing, or consecutive hyphens. They can contain at most 64 characters; descriptions can contain at most 1024. Without a `name` field, Pi uses the skill's directory name.
+
+An invalid name produces one warning that lists every broken rule and says whether the name came from the frontmatter or the directory. The warning suggests a valid name, preferring the directory name when it is valid. Pi still loads the skill under the invalid name:
+
+```text
+frontmatter name "Purple Team & Adversary Emulation" is invalid: contains invalid characters (must be lowercase a-z, 0-9, hyphens only). Use a name such as "22-purple-team". The skill is still loaded with this name.
+```
 
 Pi neither requires nor warns when the declared name differs from the parent directory. Other Agent Skills implementations may enforce that requirement, so matching names remain the portable choice.
 

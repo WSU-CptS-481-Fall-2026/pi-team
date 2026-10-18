@@ -1,6 +1,7 @@
-import { homedir } from "os";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { homedir, tmpdir } from "os";
 import { join, resolve } from "path";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ResourceDiagnostic } from "../src/core/diagnostics.ts";
 import { formatSkillsForPrompt, loadSkills, loadSkillsFromDir, type Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
@@ -427,6 +428,93 @@ describe("skills", () => {
 			expect(skillMap.get("calendar")?.sourceInfo.source).toBe("first");
 			expect(collisionWarnings).toHaveLength(1);
 			expect(collisionWarnings[0].message).toContain("name collision");
+		});
+	});
+
+	// #10919: invalid-name warnings must name the field, suggest a valid name, and state the load outcome
+	describe("invalid name warnings", () => {
+		let tempDir: string;
+
+		beforeEach(() => {
+			tempDir = mkdtempSync(join(tmpdir(), "pi-skill-names-"));
+		});
+
+		afterEach(() => {
+			rmSync(tempDir, { recursive: true, force: true });
+		});
+
+		function writeSkill(dirName: string, frontmatter: string): string {
+			const skillDir = join(tempDir, dirName);
+			mkdirSync(skillDir, { recursive: true });
+			writeFileSync(join(skillDir, "SKILL.md"), `---\n${frontmatter}\n---\n\n# Title\n`);
+			return skillDir;
+		}
+
+		it("names the frontmatter field, suggests the directory name, and says the skill still loads", () => {
+			const dir = writeSkill(
+				"22-purple-team",
+				"name: Purple Team & Adversary Emulation\ndescription: Purple-team planning.",
+			);
+
+			const { skills, diagnostics } = loadSkillsFromDir({ dir, source: "test" });
+
+			expect(skills.map((skill) => skill.name)).toEqual(["Purple Team & Adversary Emulation"]);
+			expect(diagnostics.map((d) => d.message)).toEqual([
+				'frontmatter name "Purple Team & Adversary Emulation" is invalid: contains invalid characters (must be lowercase a-z, 0-9, hyphens only). Use a name such as "22-purple-team". The skill is still loaded with this name.',
+			]);
+		});
+
+		it("identifies a directory-derived name when no frontmatter name is set", () => {
+			const dir = writeSkill("My_Skill", "description: Uses the directory name.");
+
+			const { skills, diagnostics } = loadSkillsFromDir({ dir, source: "test" });
+
+			expect(skills.map((skill) => skill.name)).toEqual(["My_Skill"]);
+			expect(diagnostics.map((d) => d.message)).toEqual([
+				'no frontmatter name is set, and the directory name "My_Skill" is invalid: contains invalid characters (must be lowercase a-z, 0-9, hyphens only). Add a frontmatter name such as "my-skill". The skill is still loaded with this name.',
+			]);
+		});
+
+		it("reports every broken rule in one warning and suggests a slug when the directory name is also invalid", () => {
+			const dir = writeSkill("Bad Dir", "name: -Bad--Name-\ndescription: Breaks several rules.");
+
+			const { diagnostics } = loadSkillsFromDir({ dir, source: "test" });
+
+			expect(diagnostics.map((d) => d.message)).toEqual([
+				'frontmatter name "-Bad--Name-" is invalid: contains invalid characters (must be lowercase a-z, 0-9, hyphens only); must not start or end with a hyphen; must not contain consecutive hyphens. Use a name such as "bad-name". The skill is still loaded with this name.',
+			]);
+		});
+
+		it("does not claim the skill loaded when a missing description skips it", () => {
+			const dir = writeSkill("no-description", "name: No Description");
+
+			const { skills, diagnostics } = loadSkillsFromDir({ dir, source: "test" });
+
+			expect(skills).toHaveLength(0);
+			expect(diagnostics.map((d) => d.message)).toEqual([
+				"description is required. The skill is not loaded.",
+				'frontmatter name "No Description" is invalid: contains invalid characters (must be lowercase a-z, 0-9, hyphens only). Use a name such as "no-description".',
+			]);
+		});
+
+		it("removes accents from slug suggestions", () => {
+			const dir = writeSkill("Notes Dir", "name: Café Notes\ndescription: Accented name.");
+
+			const { diagnostics } = loadSkillsFromDir({ dir, source: "test" });
+
+			expect(diagnostics[0]?.message).toContain('Use a name such as "cafe-notes".');
+		});
+
+		it("keeps slug suggestions within the length limit", () => {
+			const longName = `${"Word ".repeat(20)}End`;
+			const dir = writeSkill("Long Dir", `name: ${longName}\ndescription: Long name.`);
+
+			const { diagnostics } = loadSkillsFromDir({ dir, source: "test" });
+			const suggestion = diagnostics[0]?.message.match(/such as "([^"]+)"/)?.[1];
+
+			expect(suggestion).toBeDefined();
+			expect(suggestion!.length).toBeLessThanOrEqual(64);
+			expect(suggestion).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
 		});
 	});
 });
